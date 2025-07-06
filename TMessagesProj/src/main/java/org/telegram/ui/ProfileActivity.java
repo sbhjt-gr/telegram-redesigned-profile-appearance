@@ -335,6 +335,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private AudioPlayerAlert.ClippingTextViewSwitcher mediaCounterTextView;
     private RLottieImageView writeButton;
     private AnimatorSet writeButtonAnimation;
+    private LinearLayout profileButtonsContainer;
+    private List<ProfileActionButton> profileActionButtons;
     private AnimatorSet qrItemAnimation;
     private Drawable lockIconDrawable;
     private final Drawable[] verifiedDrawable = new Drawable[2];
@@ -5248,6 +5250,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
         writeButton.setScaleType(ImageView.ScaleType.CENTER);
 
+        createProfileButtonsContainer(context);
+        frameLayout.addView(profileButtonsContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 80, Gravity.RIGHT | Gravity.TOP, 16, 0, 16, 0));
         frameLayout.addView(writeButton, LayoutHelper.createFrame(60, 60, Gravity.RIGHT | Gravity.TOP, 0, 0, 16, 0));
         writeButton.setOnClickListener(v -> {
             if (writeButton.getTag() != null) {
@@ -7263,6 +7267,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (writeButtonVisible && chatId != 0) {
                     writeButtonVisible = ChatObject.isChannel(currentChat) && !currentChat.megagroup && chatInfo != null && chatInfo.linked_chat_id != 0 && infoHeaderRow != -1;
                 }
+                writeButtonVisible = writeButtonVisible && (profileButtonsContainer == null || profileButtonsContainer.getVisibility() != View.VISIBLE);
                 if (!openAnimationInProgress) {
                     boolean currentVisible = writeButton.getTag() == null;
                     if (writeButtonVisible != currentVisible) {
@@ -7328,6 +7333,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (giftsView != null) {
                     giftsView.setExpandCoords(avatarContainer2.getMeasuredWidth() - AndroidUtilities.dp(40), writeButtonVisible, (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0) + ActionBar.getCurrentActionBarHeight() + extraHeight + searchTransitionOffset);
                 }
+            }
+
+            if (profileButtonsContainer != null) {
+                profileButtonsContainer.setTranslationY((actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0) + ActionBar.getCurrentActionBarHeight() + extraHeight + searchTransitionOffset - AndroidUtilities.dp(40));
+                updateProfileButtonsVisibility();
             }
 
             avatarX = -AndroidUtilities.dpf2(47f) * diff;
@@ -10300,6 +10310,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (qrItem != null) {
             updateQrItemVisibility(true);
         }
+        
+        if (profileButtonsContainer != null) {
+            populateProfileButtons();
+        }
+        
         AndroidUtilities.runOnUIThread(this::updateEmojiStatusEffectPosition);
     }
 
@@ -13653,6 +13668,153 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         } catch (Exception e) {}
     }
 
+    private void createProfileButtonsContainer(Context context) {
+        profileButtonsContainer = new LinearLayout(context);
+        profileButtonsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        profileButtonsContainer.setGravity(Gravity.CENTER_VERTICAL);
+        profileActionButtons = new ArrayList<>();
+        
+        populateProfileButtons();
+        updateProfileButtonsVisibility();
+    }
+    
+    private void populateProfileButtons() {
+        if (profileButtonsContainer == null) return;
+        
+        profileButtonsContainer.removeAllViews();
+        profileActionButtons.clear();
+        
+        Context context = getContext();
+        if (context == null) return;
+        
+        boolean isMyProfile = UserObject.isUserSelf(getMessagesController().getUser(userId));
+        boolean isBot = userId != 0 && getMessagesController().getUser(userId) != null && getMessagesController().getUser(userId).bot;
+        boolean isChannel = ChatObject.isChannel(currentChat) && !ChatObject.isMegagroup(currentChat);
+        boolean isMegagroup = ChatObject.isMegagroup(currentChat);
+        
+        List<Integer> buttonTypes = new ArrayList<>();
+        
+        if (userId != 0 && !isMyProfile) {
+            buttonTypes.add(ProfileActionButton.TYPE_MESSAGE);
+            
+            boolean isMuted = getMessagesController().isDialogMuted(userId, 0);
+            buttonTypes.add(isMuted ? ProfileActionButton.TYPE_UNMUTE : ProfileActionButton.TYPE_MUTE);
+            
+            if (!isBot && userInfo != null && userInfo.phone_calls_available) {
+                buttonTypes.add(ProfileActionButton.TYPE_CALL);
+                if (userInfo.video_calls_available) {
+                    buttonTypes.add(ProfileActionButton.TYPE_VIDEO);
+                }
+            }
+            
+            buttonTypes.add(ProfileActionButton.TYPE_SHARE);
+        } else if (chatId != 0) {
+            if (isChannel && chatInfo != null && chatInfo.linked_chat_id != 0) {
+                buttonTypes.add(ProfileActionButton.TYPE_MESSAGE);
+            }
+            
+            if (currentChat != null && !currentChat.left && ChatObject.canUserDoAdminAction(currentChat, ChatObject.ACTION_INVITE)) {
+                if (hasVoiceChatItem) {
+                    buttonTypes.add(ProfileActionButton.TYPE_VOICE_CHAT);
+                } else {
+                    buttonTypes.add(ProfileActionButton.TYPE_CALL);
+                }
+            }
+            
+            if (currentChat != null) {
+                boolean isMuted = getMessagesController().isDialogMuted(-chatId, 0);
+                buttonTypes.add(isMuted ? ProfileActionButton.TYPE_UNMUTE : ProfileActionButton.TYPE_MUTE);
+            }
+            
+            if (currentChat != null && currentChat.left) {
+                buttonTypes.add(ProfileActionButton.TYPE_JOIN);
+            } else if (currentChat != null && !ChatObject.isNotInChat(currentChat)) {
+                buttonTypes.add(ProfileActionButton.TYPE_LEAVE);
+            }
+            
+            buttonTypes.add(ProfileActionButton.TYPE_SHARE);
+        }
+        
+        int buttonCount = Math.min(buttonTypes.size(), 4);
+        int buttonWidth = AndroidUtilities.dp(70);
+        int spacing = AndroidUtilities.dp(8);
+        
+        for (int i = 0; i < buttonCount; i++) {
+            ProfileActionButton button = new ProfileActionButton(context, buttonTypes.get(i));
+            button.setOnClickListener(v -> handleButtonClick((ProfileActionButton) v));
+            
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(buttonWidth, AndroidUtilities.dp(72));
+            if (i > 0) {
+                params.leftMargin = spacing;
+            }
+            
+            profileButtonsContainer.addView(button, params);
+            profileActionButtons.add(button);
+        }
+    }
+    
+    private void handleButtonClick(ProfileActionButton button) {
+        switch (button.getButtonType()) {
+            case ProfileActionButton.TYPE_MESSAGE:
+                onWriteButtonClick();
+                break;
+            case ProfileActionButton.TYPE_MUTE:
+            case ProfileActionButton.TYPE_UNMUTE:
+                long dialogId = userId != 0 ? userId : -chatId;
+                boolean muted = getMessagesController().isDialogMuted(dialogId, topicId);
+                getNotificationsController().muteDialog(dialogId, topicId, !muted);
+                BulletinFactory.createMuteBulletin(ProfileActivity.this, !muted, null).show();
+                populateProfileButtons();
+                break;
+            case ProfileActionButton.TYPE_CALL:
+                if (userId != 0) {
+                    VoIPHelper.startCall(getMessagesController().getUser(userId), userInfo != null && userInfo.video_calls_available, userInfo != null && userInfo.phone_calls_available, getParentActivity(), userInfo, getAccountInstance());
+                } else if (chatId != 0) {
+                    VoIPHelper.startCall(currentChat, null, null, false, getParentActivity(), ProfileActivity.this, getAccountInstance());
+                }
+                break;
+            case ProfileActionButton.TYPE_VIDEO:
+                if (userId != 0) {
+                    VoIPHelper.startCall(getMessagesController().getUser(userId), true, userInfo != null && userInfo.phone_calls_available, getParentActivity(), userInfo, getAccountInstance());
+                }
+                break;
+            case ProfileActionButton.TYPE_SHARE:
+                try {
+                    actionBar.getActionBarMenuOnItemClick().onItemClick(share);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                break;
+            case ProfileActionButton.TYPE_LEAVE:
+                try {
+                    actionBar.getActionBarMenuOnItemClick().onItemClick(leave_group);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                break;
+            case ProfileActionButton.TYPE_JOIN:
+                getMessagesController().addUserToChat(chatId, getUserConfig().getCurrentUser(), 0, null, ProfileActivity.this, null);
+                break;
+            case ProfileActionButton.TYPE_VOICE_CHAT:
+                try {
+                    actionBar.getActionBarMenuOnItemClick().onItemClick(call_item);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                break;
+        }
+    }
+    
+    private void updateProfileButtonsVisibility() {
+        if (profileButtonsContainer == null) return;
+        
+        boolean shouldShow = extraHeight > AndroidUtilities.dp(40);
+        profileButtonsContainer.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
+        
+        float alpha = Math.max(0, Math.min(1, (extraHeight - AndroidUtilities.dp(40)) / AndroidUtilities.dp(48)));
+        profileButtonsContainer.setAlpha(alpha);
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     private void openAddToContact(TLRPC.User user, Bundle args) {
         ContactAddActivity contactAddActivity = new ContactAddActivity(args, resourcesProvider);
@@ -14619,6 +14781,157 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         final boolean visible = extraHeight >= dp(82);
         if (collectibleHintVisible == null || collectibleHintVisible != visible) {
             collectibleHint.animate().alpha((collectibleHintVisible = visible) ? 1.0f : 0.0f).setInterpolator(CubicBezierInterpolator.EASE_OUT).setDuration(200).start();
+        }
+    }
+
+    private class ProfileActionButton extends FrameLayout {
+        private ImageView iconView;
+        private TextView labelView;
+        private Paint backgroundPaint;
+        private RectF backgroundRect;
+        private int buttonType;
+        private boolean pressed;
+        
+        public static final int TYPE_MESSAGE = 0;
+        public static final int TYPE_MUTE = 1;
+        public static final int TYPE_UNMUTE = 2;
+        public static final int TYPE_CALL = 3;
+        public static final int TYPE_VIDEO = 4;
+        public static final int TYPE_GIFT = 5;
+        public static final int TYPE_SHARE = 6;
+        public static final int TYPE_STOP = 7;
+        public static final int TYPE_LEAVE = 8;
+        public static final int TYPE_ADD_STORY = 9;
+        public static final int TYPE_LIVE_STREAM = 10;
+        public static final int TYPE_JOIN = 11;
+        public static final int TYPE_VOICE_CHAT = 12;
+
+        public ProfileActionButton(Context context, int type) {
+            super(context);
+            this.buttonType = type;
+            
+            backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            backgroundPaint.setColor(0x1AFFFFFF);
+            backgroundRect = new RectF();
+            
+            iconView = new ImageView(context);
+            iconView.setScaleType(ImageView.ScaleType.CENTER);
+            iconView.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
+            
+            labelView = new TextView(context);
+            labelView.setTextColor(Color.WHITE);
+            labelView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            labelView.setTypeface(AndroidUtilities.bold());
+            labelView.setGravity(Gravity.CENTER);
+            labelView.setSingleLine(true);
+            labelView.setEllipsize(TextUtils.TruncateAt.END);
+            
+            LinearLayout container = new LinearLayout(context);
+            container.setOrientation(LinearLayout.VERTICAL);
+            container.setGravity(Gravity.CENTER);
+            
+            container.addView(iconView, LayoutHelper.createLinear(24, 24, Gravity.CENTER, 0, 0, 0, 2));
+            container.addView(labelView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
+            
+            addView(container, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER, 8, 8, 8, 8));
+            
+            setupButton(type);
+            setClickable(true);
+            setFocusable(true);
+        }
+        
+        private void setupButton(int type) {
+            switch (type) {
+                case TYPE_MESSAGE:
+                    iconView.setImageResource(R.drawable.msg_msgbubble3);
+                    labelView.setText(LocaleController.getString(R.string.SendMessage));
+                    break;
+                case TYPE_MUTE:
+                    iconView.setImageResource(R.drawable.msg_mute);
+                    labelView.setText(LocaleController.getString(R.string.Mute));
+                    break;
+                case TYPE_UNMUTE:
+                    iconView.setImageResource(R.drawable.msg_unmute);
+                    labelView.setText(LocaleController.getString(R.string.Unmute));
+                    break;
+                case TYPE_CALL:
+                    iconView.setImageResource(R.drawable.ic_call);
+                    labelView.setText(LocaleController.getString(R.string.Call));
+                    break;
+                case TYPE_VIDEO:
+                    iconView.setImageResource(R.drawable.profile_video);
+                    labelView.setText(LocaleController.getString(R.string.VideoCall));
+                    break;
+                case TYPE_GIFT:
+                    iconView.setImageResource(R.drawable.msg_share);
+                    labelView.setText("Gift");
+                    break;
+                case TYPE_SHARE:
+                    iconView.setImageResource(R.drawable.msg_share);
+                    labelView.setText(LocaleController.getString(R.string.ShareContact));
+                    break;
+                case TYPE_STOP:
+                    iconView.setImageResource(R.drawable.calls_decline);
+                    labelView.setText(LocaleController.getString(R.string.Stop));
+                    break;
+                case TYPE_LEAVE:
+                    iconView.setImageResource(R.drawable.msg_leave);
+                    labelView.setText(LocaleController.getString(R.string.LeaveChannel));
+                    break;
+                case TYPE_ADD_STORY:
+                    iconView.setImageResource(R.drawable.msg_addbot);
+                    labelView.setText(LocaleController.getString(R.string.AddStory));
+                    break;
+                case TYPE_LIVE_STREAM:
+                    iconView.setImageResource(R.drawable.msg_voicechat2);
+                    labelView.setText(LocaleController.getString(R.string.VoipChannelVoiceChat));
+                    break;
+                case TYPE_JOIN:
+                    iconView.setImageResource(R.drawable.msg_addcontact);
+                    labelView.setText(LocaleController.getString(R.string.ChannelJoin));
+                    break;
+                case TYPE_VOICE_CHAT:
+                    iconView.setImageResource(R.drawable.msg_voicechat2);
+                    labelView.setText(LocaleController.getString(R.string.VoipGroupVoiceChat));
+                    break;
+            }
+        }
+        
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            backgroundRect.set(0, 0, w, h);
+        }
+        
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float radius = AndroidUtilities.dp(12);
+            canvas.drawRoundRect(backgroundRect, radius, radius, backgroundPaint);
+            super.onDraw(canvas);
+        }
+        
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            boolean wasPressed = pressed;
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    pressed = true;
+                    setAlpha(0.8f);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    pressed = false;
+                    setAlpha(1.0f);
+                    break;
+            }
+            if (wasPressed != pressed) {
+                invalidate();
+            }
+            return super.onTouchEvent(event);
+        }
+        
+        public int getButtonType() {
+            return buttonType;
         }
     }
 
