@@ -3422,8 +3422,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 avatarContainer2.setPivotX(avatarContainer2.getMeasuredWidth() / 2f);
                 AndroidUtilities.updateViewVisibilityAnimated(avatarContainer2, !expanded, 0.95f, true);
 
-                callItem.setVisibility(expanded || !callItemVisible ? GONE : INVISIBLE);
-                videoCallItem.setVisibility(expanded || !videoCallItemVisible ? GONE : INVISIBLE);
+                boolean hideForNewButtons = profileButtonsContainer != null && profileButtonsContainer.getVisibility() == View.VISIBLE;
+                callItem.setVisibility(expanded || !callItemVisible || hideForNewButtons ? GONE : INVISIBLE);
+                videoCallItem.setVisibility(expanded || !videoCallItemVisible || hideForNewButtons ? GONE : INVISIBLE);
                 editItem.setVisibility(expanded || !editItemVisible ? GONE : INVISIBLE);
                 otherItem.setVisibility(expanded ? GONE : INVISIBLE);
                 if (qrItem != null) {
@@ -6937,11 +6938,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         ActionBarMenuItem mediaSearchItem = sharedMediaLayout.getSearchItem();
         ImageView mediaOptionsItem = sharedMediaLayout.getSearchOptionsItem();
         TextView saveItem = sharedMediaLayout.getSaveItem();
+        boolean hideForNewButtonSystem = profileButtonsContainer != null && profileButtonsContainer.getVisibility() == View.VISIBLE;
+        
         if (!mediaHeaderVisible) {
-            if (callItemVisible) {
+            if (callItemVisible && !hideForNewButtonSystem) {
                 callItem.setVisibility(View.VISIBLE);
             }
-            if (videoCallItemVisible) {
+            if (videoCallItemVisible && !hideForNewButtonSystem) {
                 videoCallItem.setVisibility(View.VISIBLE);
             }
             if (editItemVisible) {
@@ -6977,12 +6980,14 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         ArrayList<Animator> animators = new ArrayList<>();
 
-        animators.add(ObjectAnimator.ofFloat(callItem, View.ALPHA, visible ? 0.0f : 1.0f));
-        animators.add(ObjectAnimator.ofFloat(videoCallItem, View.ALPHA, visible ? 0.0f : 1.0f));
+        if (!hideForNewButtonSystem) {
+            animators.add(ObjectAnimator.ofFloat(callItem, View.ALPHA, visible ? 0.0f : 1.0f));
+            animators.add(ObjectAnimator.ofFloat(videoCallItem, View.ALPHA, visible ? 0.0f : 1.0f));
+            animators.add(ObjectAnimator.ofFloat(callItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
+            animators.add(ObjectAnimator.ofFloat(videoCallItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
+        }
         animators.add(ObjectAnimator.ofFloat(otherItem, View.ALPHA, visible ? 0.0f : 1.0f));
         animators.add(ObjectAnimator.ofFloat(editItem, View.ALPHA, visible ? 0.0f : 1.0f));
-        animators.add(ObjectAnimator.ofFloat(callItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
-        animators.add(ObjectAnimator.ofFloat(videoCallItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
         animators.add(ObjectAnimator.ofFloat(otherItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
         animators.add(ObjectAnimator.ofFloat(editItem, View.TRANSLATION_Y, visible ? -AndroidUtilities.dp(10) : 0.0f));
         animators.add(ObjectAnimator.ofFloat(mediaSearchItem, View.ALPHA, visible ? 1.0f : 0.0f));
@@ -7010,10 +7015,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             public void onAnimationEnd(Animator animation) {
                 if (headerAnimatorSet != null) {
                     if (mediaHeaderVisible) {
-                        if (callItemVisible) {
+                        if (callItemVisible && !hideForNewButtonSystem) {
                             callItem.setVisibility(View.GONE);
                         }
-                        if (videoCallItemVisible) {
+                        if (videoCallItemVisible && !hideForNewButtonSystem) {
                             videoCallItem.setVisibility(View.GONE);
                         }
                         if (editItemVisible) {
@@ -10640,8 +10645,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             otherItem.hideSubItem(edit_avatar);
             otherItem.hideSubItem(delete_avatar);
         }
+        boolean hideActionBarButtonsForNewSystem = profileButtonsContainer != null && profileButtonsContainer.getVisibility() == View.VISIBLE;
+        
         if (!mediaHeaderVisible) {
-            if (callItemVisible) {
+            if (callItemVisible && !hideActionBarButtonsForNewSystem) {
                 if (callItem.getVisibility() != View.VISIBLE) {
                     callItem.setVisibility(View.VISIBLE);
                     if (animated) {
@@ -10654,7 +10661,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     callItem.setVisibility(View.GONE);
                 }
             }
-            if (videoCallItemVisible) {
+            if (videoCallItemVisible && !hideActionBarButtonsForNewSystem) {
                 if (videoCallItem.getVisibility() != View.VISIBLE) {
                     videoCallItem.setVisibility(View.VISIBLE);
                     if (animated) {
@@ -13809,10 +13816,16 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (profileButtonsContainer == null) return;
         
         boolean shouldShow = extraHeight > AndroidUtilities.dp(40);
+        boolean wasVisible = profileButtonsContainer.getVisibility() == View.VISIBLE;
+        
         profileButtonsContainer.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
         
         float alpha = Math.max(0, Math.min(1, (extraHeight - AndroidUtilities.dp(40)) / AndroidUtilities.dp(48)));
         profileButtonsContainer.setAlpha(alpha);
+        
+        if (wasVisible != shouldShow) {
+            createActionBarMenu(false);
+        }
     }
 
     @SuppressLint("NotifyDataSetChanged")
